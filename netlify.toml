@@ -1,0 +1,17 @@
+[build]
+command = "npm run build"
+publish = "out"
+
+[functions]
+directory = "netlify/functions"
+
+[[redirects]]
+from = "/api/weread"
+to = "/.netlify/functions/weread"
+status = 200
+
+[dev]
+command = "npm run dev"
+targetPort = 3000
+port = 8888
+framework = "#auto"
