@@ -289,6 +289,30 @@ textarea:focus {
   color: var(--danger);
 }
 
+.connection-debug {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.connection-debug summary {
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.connection-debug pre {
+  margin: 10px 0 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: Consolas, "Liberation Mono", monospace;
+  line-height: 1.55;
+}
+
 .main {
   display: grid;
   grid-template-columns: 230px minmax(0, 1fr);

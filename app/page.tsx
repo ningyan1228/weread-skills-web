@@ -1642,6 +1642,7 @@ export default function Home() {
   const [status, setStatus] = useState<"idle" | "ok" | "bad">("idle");
   const [statusText, setStatusText] = useState("请先输入 API Key，然后测试连接。");
   const [error, setError] = useState("");
+  const [connectionDebug, setConnectionDebug] = useState("");
   const [result, setResult] = useState<unknown>(null);
   const [noteDetails, setNoteDetails] = useState<NoteDetails | null>(null);
   const [noteLoading, setNoteLoading] = useState(false);
@@ -1723,7 +1724,7 @@ export default function Home() {
       });
     } catch (err) {
       if (err instanceof TypeError) {
-        throw new Error("代理服务连接失败，请检查代理地址或代理服务是否可用。");
+        throw new Error(`代理服务连接失败：${endpoint}。${err.message || "浏览器无法完成跨域请求。"}`);
       }
       throw err;
     }
@@ -1807,23 +1808,31 @@ export default function Home() {
   async function testConnection() {
     setLoading(true);
     setError("");
+    setConnectionDebug("");
     setResult(null);
+    let debugProxy = "";
     try {
       const savedKey = saveApiKey();
-      const savedProxy = HAS_BUILT_IN_WEREAD_PROXY ? proxyUrl : saveProxyUrl();
+      const savedProxy = HAS_BUILT_IN_WEREAD_PROXY ? DEFAULT_WEREAD_PROXY_URL : saveProxyUrl();
+      debugProxy = savedProxy;
       setStatus("idle");
-      setStatusText("正在检查代理服务...");
       const usableProxy = await resolveUsableProxy(savedProxy);
-      setStatusText("代理服务可用，正在测试 API Key...");
+      debugProxy = usableProxy;
+      setConnectionDebug(`当前代理：${usableProxy}\n请求格式：POST text/plain\n测试接口：/shelf/sync`);
+      setStatusText("正在通过内置代理测试 API Key...");
       const data = await callWeread({ api_name: "/shelf/sync" }, savedKey, usableProxy);
       setResult(data);
       setStatus("ok");
       setStatusText("连接成功。浏览器已通过代理访问微信读书 Skills。");
       setActiveTool("shelf");
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       setStatus("bad");
       setStatusText(getConnectionErrorText(err));
-      setError(err instanceof Error ? err.message : String(err));
+      setConnectionDebug(
+        `当前代理：${debugProxy || DEFAULT_WEREAD_PROXY_URL || proxyUrl || "未设置"}\n错误：${message}\n如果手机能直接打开代理根地址，但这里失败，请确认 Deno 里的 main.js 已更新并重新 Deploy。`
+      );
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -2521,6 +2530,12 @@ export default function Home() {
               {status === "ok" ? <CheckCircle2 size={17} /> : <Settings size={17} />}
               {statusText}
             </div>
+            {connectionDebug ? (
+              <details className="connection-debug">
+                <summary>连接诊断</summary>
+                <pre>{connectionDebug}</pre>
+              </details>
+            ) : null}
           </div>
         </section>
 
