@@ -21,7 +21,7 @@ GitHub Pages 只能托管静态文件，不能直接做后端代理，所以必�
 当前已通过手机关闭 VPN 测试的代理地址：
 
 ```text
-https://weread-proxy-deno-79hsdvs1sx47.gqzning.deno.net/
+https://weread-proxy-deno-21-zqs91qph3nb5.gqzning.deno.net/
 ```
 
 这个地址已经写入 GitHub Pages Actions。重新部署 GitHub Pages 后，页面会自动隐藏“代理地址”输入框，普通用户只需要填写微信读书 API Key。
