@@ -1780,6 +1780,13 @@ export default function Home() {
       throw new Error("请先填写微信读书代理地址。");
     }
 
+    const candidate = candidates[0].trim();
+    setProxyUrl(candidate);
+    if (!HAS_BUILT_IN_WEREAD_PROXY) {
+      window.localStorage.setItem(PROXY_URL_STORAGE, candidate);
+    }
+    return candidate;
+
     let lastError = "";
     for (const candidate of candidates) {
       try {
@@ -1789,8 +1796,8 @@ export default function Home() {
           window.localStorage.setItem(PROXY_URL_STORAGE, candidate);
         }
         return candidate;
-      } catch (err) {
-        lastError = err instanceof Error ? err.message : String(err);
+      } catch {
+        lastError = "Proxy health check failed.";
       }
     }
 
