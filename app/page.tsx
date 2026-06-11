@@ -1652,14 +1652,14 @@ export default function Home() {
     if (stored) {
       setApiKey(stored);
       if (storedProxy.trim()) {
-        setStatusText("已从本机浏览器读取 API Key 和代理地址，可直接测试连接。");
+        setStatusText("已从本机浏览器读取 API Key，可直接测试连接。");
         void autoLoadShelf(stored, storedProxy);
         const today = localDateKey();
         if (window.localStorage.getItem(CHECKIN_LAST_POPUP_STORAGE) !== today) {
           void openDailyCheckin(stored, true, storedProxy);
         }
       } else {
-        setStatusText("已从本机浏览器读取 API Key，请先填写微信读书代理地址。");
+        setStatusText("请先填写微信读书代理地址。");
       }
     }
   }, []);
@@ -2403,9 +2403,9 @@ export default function Home() {
                 value={proxyUrl}
                 onChange={(event) => setProxyUrl(event.target.value)}
                 onBlur={() => saveProxyUrl()}
-                placeholder="https://weread-skills-proxy.xxx.workers.dev"
+                placeholder="https://你的代理地址"
               />
-              <p className="field-help">填写 Cloudflare Worker 地址；以后换代理也只需改这里。</p>
+              <p className="field-help">Cloudflare 在国内可能不可用；请填写当前可访问的微信读书代理地址。</p>
             </div>
             <div className="field">
               <label htmlFor="apiKey">API Key</label>
