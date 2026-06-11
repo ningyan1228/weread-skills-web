@@ -168,6 +168,13 @@ type DailyCheckinItem = {
   reviews: AnyRecord[];
 };
 
+type ReadingStreakStatus = {
+  status: "continuous" | "inactive" | "unknown";
+  days: number;
+  lastReadDate?: string;
+  source: "official" | "computed";
+};
+
 type DailyCheckinResult = {
   __kind: "dailyCheckin";
   dateKey: string;
@@ -177,6 +184,7 @@ type DailyCheckinResult = {
   fallbackQuote: AnyRecord | null;
   recommendedBooks: ShelfItem[];
   streakDays: number;
+  readingStreak: ReadingStreakStatus;
   generatedAt: number;
 };
 
@@ -431,6 +439,110 @@ function getTodayReadSeconds(data: unknown, dateKey = localDateKey()) {
     return localDateKey(new Date(numericKey * 1000)) === dateKey;
   });
   return match?.seconds || 0;
+}
+
+function dateKeyFromReadTimeKey(key: string) {
+  const trimmed = String(key).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  if (/^\d{8}$/.test(trimmed)) return `${trimmed.slice(0, 4)}-${trimmed.slice(4, 6)}-${trimmed.slice(6, 8)}`;
+
+  const numeric = Number(trimmed);
+  if (!Number.isFinite(numeric) || numeric <= 0) return "";
+  const timestamp = numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
+  return localDateKey(new Date(timestamp));
+}
+
+function readingTimeEntriesFromStats(data: unknown) {
+  const root = isRecord(data) ? data : {};
+  const dailyEntries = entriesFromTimeMap(root.dailyReadTimes);
+  const readEntries = entriesFromTimeMap(root.readTimes);
+  return (dailyEntries.length ? dailyEntries : readEntries)
+    .map((item) => ({ dateKey: dateKeyFromReadTimeKey(item.key), seconds: item.seconds }))
+    .filter((item) => item.dateKey && item.seconds > 0)
+    .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+}
+
+function daysBetweenDateKeys(fromDateKey: string, toDateKey: string) {
+  const from = new Date(`${fromDateKey}T00:00:00`);
+  const to = new Date(`${toDateKey}T00:00:00`);
+  const diff = to.getTime() - from.getTime();
+  if (!Number.isFinite(diff)) return 0;
+  return Math.max(0, Math.floor(diff / 86_400_000));
+}
+
+function getOfficialReadingStreak(data: unknown) {
+  const root = isRecord(data) ? data : {};
+  const nested = [
+    root,
+    isRecord(root.summary) ? root.summary : {},
+    isRecord(root.readingSummary) ? root.readingSummary : {},
+    isRecord(root.readData) ? root.readData : {},
+    isRecord(root.profile) ? root.profile : {},
+    isRecord(root.user) ? root.user : {}
+  ];
+  for (const item of nested) {
+    const value = firstFiniteNumber(
+      item.continuousReadDays,
+      item.continueReadDays,
+      item.consecutiveReadDays,
+      item.readContinueDays,
+      item.readingStreak,
+      item.streakDays,
+      item.continueDays,
+      item.serialReadDays,
+      item.continuousDays
+    );
+    if (value && value > 0) return Math.floor(value);
+  }
+  return 0;
+}
+
+function getReadingStreakStatus(data: unknown, dateKey = localDateKey()): ReadingStreakStatus {
+  const official = getOfficialReadingStreak(data);
+  if (official > 0) {
+    return { status: "continuous", days: official, source: "official" };
+  }
+
+  const entries = readingTimeEntriesFromStats(data);
+  if (!entries.length) return { status: "unknown", days: 0, source: "computed" };
+
+  const readDates = new Set(entries.map((item) => item.dateKey));
+  if (readDates.has(dateKey)) {
+    let days = 0;
+    const cursor = new Date(`${dateKey}T00:00:00`);
+    while (readDates.has(localDateKey(cursor))) {
+      days += 1;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    return { status: "continuous", days, source: "computed" };
+  }
+
+  const lastReadDate = [...readDates].filter((item) => item <= dateKey).sort().at(-1);
+  if (!lastReadDate) return { status: "unknown", days: 0, source: "computed" };
+  return {
+    status: "inactive",
+    days: daysBetweenDateKeys(lastReadDate, dateKey),
+    lastReadDate,
+    source: "computed"
+  };
+}
+
+function formatReadingStreakBadge(status: ReadingStreakStatus | undefined) {
+  if (!status || status.status === "unknown") return "-";
+  if (status.status === "inactive") return `${status.days}天未读`;
+  return `${status.days}天连续`;
+}
+
+function formatReadingStreakMetric(status: ReadingStreakStatus | undefined) {
+  if (!status || status.status === "unknown") return "-";
+  if (status.status === "inactive") return `${status.days}天未读`;
+  return `${status.days}天`;
+}
+
+function formatReadingStreakCardLabel(status: ReadingStreakStatus | undefined) {
+  if (!status || status.status === "unknown") return "";
+  if (status.status === "inactive") return `${status.days} 天未读`;
+  return `连续阅读 ${status.days} 天`;
 }
 
 function getCheckinDates() {
@@ -743,7 +855,7 @@ function downloadDailyCheckinImage(data: DailyCheckinResult, reflection: string,
   const reviews = data.items.flatMap((item) => item.reviews);
   const highlightText = String(highlights[0]?.markText || data.fallbackQuote?.markText || "");
   const reviewText = String(getReviewText(reviews[0] || {}) || "");
-  const streak = Math.max(data.streakDays, getCheckinStreak(data.dateKey) || 1);
+  const streakLabel = formatReadingStreakCardLabel(data.readingStreak);
   const displayNameText = displayName.trim().replace(/^@+/, "");
 
   ctx.fillStyle = "#dff2ff";
@@ -770,7 +882,9 @@ function downloadDailyCheckinImage(data: DailyCheckinResult, reflection: string,
   ctx.fillText(formatDuration(data.readSeconds) || "今天还没读书", 170, 365);
   ctx.fillStyle = "#5e728a";
   ctx.font = "24px Arial, Microsoft YaHei, sans-serif";
-  ctx.fillText(`连续打卡 ${streak} 天`, 650, 365);
+  if (streakLabel) {
+    ctx.fillText(streakLabel, 650, 365);
+  }
 
   let y = 485;
   ctx.fillStyle = "#5e728a";
@@ -2182,6 +2296,7 @@ export default function Home() {
       callWeread({ api_name: "/shelf/sync" }, trimmedKey, proxyOverride)
     ]);
     const readSeconds = getTodayReadSeconds(statsData, dateKey);
+    const readingStreak = getReadingStreakStatus(statsData, dateKey);
     const books = normalizeShelfItems(isRecord(shelfData) ? shelfData : {})
       .filter((item) => item.type === "book" && item.id)
       .sort((a, b) => b.updatedAt - a.updatedAt);
@@ -2225,7 +2340,8 @@ export default function Home() {
       items,
       fallbackQuote,
       recommendedBooks,
-      streakDays: getCheckinStreak(dateKey),
+      streakDays: readingStreak.status === "continuous" ? readingStreak.days : 0,
+      readingStreak,
       generatedAt: Math.floor(Date.now() / 1000)
     };
   }
@@ -3424,7 +3540,7 @@ function DailyCheckinSummary({ data, onOpenCheckin }: { data: unknown; onOpenChe
         <Metric label="今日阅读" value={result.readSeconds > 0 ? formatDuration(result.readSeconds) : "未达成"} />
         <Metric label="今日相关书籍" value={bookNames.length || result.recommendedBooks.length} />
         <Metric label="今日划线/想法" value={result.items.reduce((sum, item) => sum + item.highlights.length + item.reviews.length, 0)} />
-        <Metric label="连续打卡" value={`${Math.max(result.streakDays, getCheckinStreak(result.dateKey))}天`} />
+        <Metric label="连续阅读" value={formatReadingStreakMetric(result.readingStreak)} />
       </div>
 
       {bookNames.length ? (
@@ -3488,7 +3604,7 @@ function DailyCheckinModal({
   const recommended = data?.recommendedBooks || [];
   const highlightText = data ? getCheckinHighlightText(data) : "";
   const reviewText = data ? getCheckinReviewText(data) : "";
-  const streak = data ? Math.max(data.streakDays, getCheckinStreak(data.dateKey)) : 0;
+  const streakLabel = data ? formatReadingStreakBadge(data.readingStreak) : "-";
 
   function skipToday() {
     if (typeof window !== "undefined") {
@@ -3530,7 +3646,7 @@ function DailyCheckinModal({
                 <p className="eyebrow">{hasRead ? "今天已经读书" : "今天还没读书"}</p>
                 <h3>{hasRead ? `今日阅读 ${formatDuration(data.readSeconds)}` : "先读几页，再回来打卡也不迟。"}</h3>
               </div>
-              <strong>{streak}天连续</strong>
+              <strong>{streakLabel}</strong>
             </div>
 
             {bookItems.length ? (
