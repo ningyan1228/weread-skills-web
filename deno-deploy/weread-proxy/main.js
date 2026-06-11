@@ -3,7 +3,7 @@ const SKILL_VERSION = "1.0.3";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Access-Control-Max-Age": "86400"
 };
@@ -16,6 +16,14 @@ function jsonResponse(body, status = 200) {
       "Content-Type": "application/json; charset=utf-8"
     }
   });
+}
+
+async function readJsonBody(request) {
+  const text = await request.text();
+  if (!text.trim()) {
+    return null;
+  }
+  return JSON.parse(text);
 }
 
 Deno.serve(async (request) => {
@@ -33,24 +41,24 @@ Deno.serve(async (request) => {
   }
 
   if (request.method !== "POST") {
-    return jsonResponse({ errcode: -1, message: "只支持 POST 请求。" }, 405);
+    return jsonResponse({ errcode: -1, message: "Only POST requests are supported." }, 405);
   }
 
   let payload;
   try {
-    payload = await request.json();
+    payload = await readJsonBody(request);
   } catch {
-    return jsonResponse({ errcode: -1, message: "请求体不是有效 JSON。" }, 400);
+    return jsonResponse({ errcode: -1, message: "Invalid JSON body." }, 400);
   }
 
   const { apiKey, api_name, skill_version: _ignored, ...params } = payload || {};
 
   if (!apiKey || typeof apiKey !== "string") {
-    return jsonResponse({ errcode: -1, message: "缺少 API Key。" }, 400);
+    return jsonResponse({ errcode: -1, message: "Missing API Key." }, 400);
   }
 
   if (!api_name || typeof api_name !== "string") {
-    return jsonResponse({ errcode: -1, message: "缺少 api_name。" }, 400);
+    return jsonResponse({ errcode: -1, message: "Missing api_name." }, 400);
   }
 
   try {
@@ -80,7 +88,7 @@ Deno.serve(async (request) => {
     return jsonResponse(
       {
         errcode: -1,
-        message: "无法连接微信读书 Skills 网关，请稍后重试。",
+        message: "Unable to connect to WeRead Skills gateway. Please retry later.",
         details: error instanceof Error ? error.message : String(error)
       },
       502

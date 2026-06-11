@@ -1718,7 +1718,7 @@ export default function Home() {
     try {
       response = await fetch(endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "text/plain" },
         body: JSON.stringify({ apiKey: trimmedKey, ...params })
       });
     } catch (err) {
@@ -1758,12 +1758,15 @@ export default function Home() {
 
     let response: Response;
     try {
-      response = await fetch(trimmed, { method: "OPTIONS" });
+      response = await fetch(trimmed, {
+        method: "GET",
+        cache: "no-store"
+      });
     } catch {
       throw new Error("代理服务连接失败，请检查代理地址或代理服务是否可用。");
     }
 
-    if (!response.ok && response.status !== 204) {
+    if (!response.ok) {
       throw new Error(`代理服务自检失败：HTTP ${response.status}`);
     }
   }
