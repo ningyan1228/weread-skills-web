@@ -1659,6 +1659,9 @@ export default function Home() {
     const storedProxy = HAS_BUILT_IN_WEREAD_PROXY
       ? DEFAULT_WEREAD_PROXY_URL
       : window.localStorage.getItem(PROXY_URL_STORAGE) || DEFAULT_WEREAD_PROXY_URL;
+    if (HAS_BUILT_IN_WEREAD_PROXY) {
+      window.localStorage.removeItem(PROXY_URL_STORAGE);
+    }
     setProxyUrl(storedProxy);
     const stored = window.localStorage.getItem(API_KEY_STORAGE);
     if (stored) {
@@ -1677,6 +1680,12 @@ export default function Home() {
   }, []);
 
   function saveProxyUrl(nextUrl = proxyUrl) {
+    if (HAS_BUILT_IN_WEREAD_PROXY) {
+      window.localStorage.removeItem(PROXY_URL_STORAGE);
+      setProxyUrl(DEFAULT_WEREAD_PROXY_URL);
+      return DEFAULT_WEREAD_PROXY_URL;
+    }
+
     const trimmed = nextUrl.trim();
     setProxyUrl(trimmed);
     if (trimmed) {
@@ -2497,7 +2506,7 @@ export default function Home() {
                 onChange={(event) => setApiKey(event.target.value)}
                 onBlur={() => {
                   const savedKey = saveApiKey();
-                  const savedProxy = saveProxyUrl();
+                  const savedProxy = HAS_BUILT_IN_WEREAD_PROXY ? DEFAULT_WEREAD_PROXY_URL : saveProxyUrl();
                   if (savedKey && savedProxy && !result) void autoLoadShelf(savedKey, savedProxy);
                   if (savedKey && savedProxy && window.localStorage.getItem(CHECKIN_LAST_POPUP_STORAGE) !== localDateKey()) {
                     void openDailyCheckin(savedKey, true, savedProxy);
