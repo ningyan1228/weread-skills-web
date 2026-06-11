@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/weread.js": {
+      "maxDuration": 10
+    }
+  }
+}

@@ -25,7 +25,16 @@ import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 
 type AnyRecord = Record<string, any>;
 
-const DEFAULT_WEREAD_PROXY_URL = process.env.NEXT_PUBLIC_WEREAD_PROXY_URL || "";
+const BUILT_IN_WEREAD_PROXY_URLS = [
+  process.env.NEXT_PUBLIC_WEREAD_PROXY_URL,
+  process.env.NEXT_PUBLIC_WEREAD_PROXY_URLS
+]
+  .filter(Boolean)
+  .flatMap((value) => String(value).split(/[,\n]/))
+  .map((value) => value.trim())
+  .filter(Boolean);
+const DEFAULT_WEREAD_PROXY_URL = BUILT_IN_WEREAD_PROXY_URLS[0] || "";
+const HAS_BUILT_IN_WEREAD_PROXY = BUILT_IN_WEREAD_PROXY_URLS.length > 0;
 
 type ToolId =
   | "checkin"
@@ -1646,7 +1655,9 @@ export default function Home() {
   const active = useMemo(() => tools.find((tool) => tool.id === activeTool) ?? tools[0], [activeTool]);
 
   useEffect(() => {
-    const storedProxy = window.localStorage.getItem(PROXY_URL_STORAGE) || DEFAULT_WEREAD_PROXY_URL;
+    const storedProxy = HAS_BUILT_IN_WEREAD_PROXY
+      ? DEFAULT_WEREAD_PROXY_URL
+      : window.localStorage.getItem(PROXY_URL_STORAGE) || DEFAULT_WEREAD_PROXY_URL;
     setProxyUrl(storedProxy);
     const stored = window.localStorage.getItem(API_KEY_STORAGE);
     if (stored) {
@@ -1739,14 +1750,62 @@ export default function Home() {
     return "连接失败。请检查 API Key 是否正确。";
   }
 
+  async function checkProxyEndpoint(endpoint: string) {
+    const trimmed = endpoint.trim();
+    if (!trimmed) {
+      throw new Error("请先填写微信读书代理地址。");
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(trimmed, { method: "OPTIONS" });
+    } catch {
+      throw new Error("代理服务连接失败，请检查代理地址或代理服务是否可用。");
+    }
+
+    if (!response.ok && response.status !== 204) {
+      throw new Error(`代理服务自检失败：HTTP ${response.status}`);
+    }
+  }
+
+  async function resolveUsableProxy(preferredProxy = proxyUrl) {
+    const candidates = HAS_BUILT_IN_WEREAD_PROXY
+      ? BUILT_IN_WEREAD_PROXY_URLS
+      : [preferredProxy.trim()].filter(Boolean);
+
+    if (!candidates.length) {
+      throw new Error("请先填写微信读书代理地址。");
+    }
+
+    let lastError = "";
+    for (const candidate of candidates) {
+      try {
+        await checkProxyEndpoint(candidate);
+        setProxyUrl(candidate);
+        if (!HAS_BUILT_IN_WEREAD_PROXY) {
+          window.localStorage.setItem(PROXY_URL_STORAGE, candidate);
+        }
+        return candidate;
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
+      }
+    }
+
+    throw new Error(lastError || "代理服务连接失败，请检查代理地址或代理服务是否可用。");
+  }
+
   async function testConnection() {
     setLoading(true);
     setError("");
     setResult(null);
     try {
       const savedKey = saveApiKey();
-      const savedProxy = saveProxyUrl();
-      const data = await callWeread({ api_name: "/shelf/sync" }, savedKey, savedProxy);
+      const savedProxy = HAS_BUILT_IN_WEREAD_PROXY ? proxyUrl : saveProxyUrl();
+      setStatus("idle");
+      setStatusText("正在检查代理服务...");
+      const usableProxy = await resolveUsableProxy(savedProxy);
+      setStatusText("代理服务可用，正在测试 API Key...");
+      const data = await callWeread({ api_name: "/shelf/sync" }, savedKey, usableProxy);
       setResult(data);
       setStatus("ok");
       setStatusText("连接成功。浏览器已通过代理访问微信读书 Skills。");
@@ -1769,7 +1828,8 @@ export default function Home() {
     setNoteDetails(null);
     setNoteError("");
     try {
-      const data = await callWeread({ api_name: "/shelf/sync" }, trimmedKey, proxyOverride);
+      const usableProxy = HAS_BUILT_IN_WEREAD_PROXY ? await resolveUsableProxy(proxyOverride) : proxyOverride;
+      const data = await callWeread({ api_name: "/shelf/sync" }, trimmedKey, usableProxy);
       setResult(data);
       setStatus("ok");
       setStatusText("已自动加载我的书架。");
@@ -2395,18 +2455,20 @@ export default function Home() {
 
           <div className="connect-panel">
             <h2>连接微信读书</h2>
-            <div className="field">
-              <label htmlFor="proxyUrl">代理地址</label>
-              <input
-                id="proxyUrl"
-                type="url"
-                value={proxyUrl}
-                onChange={(event) => setProxyUrl(event.target.value)}
-                onBlur={() => saveProxyUrl()}
-                placeholder="https://你的代理地址"
-              />
-              <p className="field-help">Cloudflare 在国内可能不可用；请填写当前可访问的微信读书代理地址。</p>
-            </div>
+            {!HAS_BUILT_IN_WEREAD_PROXY ? (
+              <div className="field">
+                <label htmlFor="proxyUrl">代理地址</label>
+                <input
+                  id="proxyUrl"
+                  type="url"
+                  value={proxyUrl}
+                  onChange={(event) => setProxyUrl(event.target.value)}
+                  onBlur={() => saveProxyUrl()}
+                  placeholder="https://你的代理地址"
+                />
+                <p className="field-help">Cloudflare 在国内可能不可用；请填写当前可访问的微信读书代理地址。</p>
+              </div>
+            ) : null}
             <div className="field">
               <label htmlFor="apiKey">API Key</label>
               <input
