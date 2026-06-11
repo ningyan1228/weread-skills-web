@@ -198,6 +198,12 @@ p {
   margin-top: 14px;
 }
 
+.field-help {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 label {
   color: var(--muted);
   font-size: 13px;

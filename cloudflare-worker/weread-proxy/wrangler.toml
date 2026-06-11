@@ -1,0 +1,4 @@
+name = "weread-skills-proxy"
+main = "src/index.js"
+compatibility_date = "2026-06-11"
+workers_dev = true

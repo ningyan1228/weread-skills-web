@@ -25,7 +25,7 @@ import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 
 type AnyRecord = Record<string, any>;
 
-const WEREAD_PROXY_URL = process.env.NEXT_PUBLIC_WEREAD_PROXY_URL || "/api/weread";
+const DEFAULT_WEREAD_PROXY_URL = process.env.NEXT_PUBLIC_WEREAD_PROXY_URL || "";
 
 type ToolId =
   | "checkin"
@@ -191,6 +191,7 @@ const cardTemplates: Array<{ id: CardTemplate; label: string }> = [
 ];
 
 const API_KEY_STORAGE = "weread_api_key";
+const PROXY_URL_STORAGE = "weread_proxy_url";
 const CHECKIN_DATES_STORAGE = "weread_checkin_dates";
 const CHECKIN_LAST_POPUP_STORAGE = "weread_checkin_last_popup_date";
 const CHECKIN_REFLECTION_STORAGE = "weread_checkin_today_reflection";
@@ -1614,6 +1615,7 @@ function exportEpub(details: NoteDetails) {
 
 export default function Home() {
   const [apiKey, setApiKey] = useState("");
+  const [proxyUrl, setProxyUrl] = useState(DEFAULT_WEREAD_PROXY_URL);
   const [activeTool, setActiveTool] = useState<ToolId>("shelf");
   const [keyword, setKeyword] = useState("");
   const [scope, setScope] = useState("10");
@@ -1644,17 +1646,37 @@ export default function Home() {
   const active = useMemo(() => tools.find((tool) => tool.id === activeTool) ?? tools[0], [activeTool]);
 
   useEffect(() => {
+    const storedProxy = window.localStorage.getItem(PROXY_URL_STORAGE) || DEFAULT_WEREAD_PROXY_URL;
+    setProxyUrl(storedProxy);
     const stored = window.localStorage.getItem(API_KEY_STORAGE);
     if (stored) {
       setApiKey(stored);
-      setStatusText("已从本机浏览器读取 API Key，可直接测试连接。");
-      void autoLoadShelf(stored);
-      const today = localDateKey();
-      if (window.localStorage.getItem(CHECKIN_LAST_POPUP_STORAGE) !== today) {
-        void openDailyCheckin(stored, true);
+      if (storedProxy.trim()) {
+        setStatusText("已从本机浏览器读取 API Key 和代理地址，可直接测试连接。");
+        void autoLoadShelf(stored, storedProxy);
+        const today = localDateKey();
+        if (window.localStorage.getItem(CHECKIN_LAST_POPUP_STORAGE) !== today) {
+          void openDailyCheckin(stored, true, storedProxy);
+        }
+      } else {
+        setStatusText("已从本机浏览器读取 API Key，请先填写微信读书代理地址。");
       }
     }
   }, []);
+
+  function saveProxyUrl(nextUrl = proxyUrl) {
+    const trimmed = nextUrl.trim();
+    setProxyUrl(trimmed);
+    if (trimmed) {
+      window.localStorage.setItem(PROXY_URL_STORAGE, trimmed);
+      setStatusText("代理地址已保存到本机浏览器。");
+    } else {
+      window.localStorage.removeItem(PROXY_URL_STORAGE);
+      setStatusText("请先填写微信读书代理地址。");
+    }
+    setStatus("idle");
+    return trimmed;
+  }
 
   function saveApiKey(nextKey = apiKey) {
     const trimmed = nextKey.trim();
@@ -1670,17 +1692,30 @@ export default function Home() {
     return trimmed;
   }
 
-  async function callWeread(params: AnyRecord, keyOverride = apiKey) {
+  async function callWeread(params: AnyRecord, keyOverride = apiKey, proxyOverride = proxyUrl) {
     const trimmedKey = keyOverride.trim();
     if (!trimmedKey) {
       throw new Error("请先输入 API Key。");
     }
 
-    const response = await fetch(WEREAD_PROXY_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ apiKey: trimmedKey, ...params })
-    });
+    const endpoint = proxyOverride.trim();
+    if (!endpoint) {
+      throw new Error("请先填写微信读书代理地址。");
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey: trimmedKey, ...params })
+      });
+    } catch (err) {
+      if (err instanceof TypeError) {
+        throw new Error("代理服务连接失败，请检查代理地址或代理服务是否可用。");
+      }
+      throw err;
+    }
 
     const data = await response.json().catch(() => null);
 
@@ -1696,27 +1731,36 @@ export default function Home() {
     return data;
   }
 
+  function getConnectionErrorText(err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("代理") || message.includes("Failed to fetch") || message.includes("fetch")) {
+      return message;
+    }
+    return "连接失败。请检查 API Key 是否正确。";
+  }
+
   async function testConnection() {
     setLoading(true);
     setError("");
     setResult(null);
     try {
       const savedKey = saveApiKey();
-      const data = await callWeread({ api_name: "/shelf/sync" }, savedKey);
+      const savedProxy = saveProxyUrl();
+      const data = await callWeread({ api_name: "/shelf/sync" }, savedKey, savedProxy);
       setResult(data);
       setStatus("ok");
       setStatusText("连接成功。浏览器已通过代理访问微信读书 Skills。");
       setActiveTool("shelf");
     } catch (err) {
       setStatus("bad");
-      setStatusText("连接失败。请检查 API Key 是否正确。");
+      setStatusText(getConnectionErrorText(err));
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
   }
 
-  async function autoLoadShelf(nextKey = apiKey) {
+  async function autoLoadShelf(nextKey = apiKey, proxyOverride = proxyUrl) {
     const trimmedKey = nextKey.trim();
     if (!trimmedKey) return;
     setActiveTool("shelf");
@@ -1725,13 +1769,13 @@ export default function Home() {
     setNoteDetails(null);
     setNoteError("");
     try {
-      const data = await callWeread({ api_name: "/shelf/sync" }, trimmedKey);
+      const data = await callWeread({ api_name: "/shelf/sync" }, trimmedKey, proxyOverride);
       setResult(data);
       setStatus("ok");
       setStatusText("已自动加载我的书架。");
     } catch (err) {
       setStatus("bad");
-      setStatusText("自动加载书架失败，请检查 API Key 后重试。");
+      setStatusText(getConnectionErrorText(err));
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
@@ -2039,14 +2083,14 @@ export default function Home() {
     };
   }
 
-  async function loadDailyCheckin(nextKey = apiKey): Promise<DailyCheckinResult> {
+  async function loadDailyCheckin(nextKey = apiKey, proxyOverride = proxyUrl): Promise<DailyCheckinResult> {
     const trimmedKey = nextKey.trim();
     if (!trimmedKey) throw new Error("请先输入 API Key。");
 
     const dateKey = localDateKey();
     const [statsData, shelfData] = await Promise.all([
-      callWeread({ api_name: "/readdata/detail", mode: "weekly" }, trimmedKey),
-      callWeread({ api_name: "/shelf/sync" }, trimmedKey)
+      callWeread({ api_name: "/readdata/detail", mode: "weekly" }, trimmedKey, proxyOverride),
+      callWeread({ api_name: "/shelf/sync" }, trimmedKey, proxyOverride)
     ]);
     const readSeconds = getTodayReadSeconds(statsData, dateKey);
     const books = normalizeShelfItems(isRecord(shelfData) ? shelfData : {})
@@ -2056,8 +2100,8 @@ export default function Home() {
     const noteResults = await Promise.allSettled(
       noteBooks.map(async (book) => {
         const [bookmarkData, reviewData] = await Promise.all([
-          callWeread({ api_name: "/book/bookmarklist", bookId: book.id }, trimmedKey),
-          callWeread({ api_name: "/review/list/mine", bookid: book.id, count: 50 }, trimmedKey)
+          callWeread({ api_name: "/book/bookmarklist", bookId: book.id }, trimmedKey, proxyOverride),
+          callWeread({ api_name: "/review/list/mine", bookid: book.id, count: 50 }, trimmedKey, proxyOverride)
         ]);
         const allHighlights = asArray((isRecord(bookmarkData) ? bookmarkData : {}).updated);
         const allReviews = asArray((isRecord(reviewData) ? reviewData : {}).reviews).map(extractMineReview);
@@ -2097,7 +2141,7 @@ export default function Home() {
     };
   }
 
-  async function openDailyCheckin(nextKey = apiKey, auto = false) {
+  async function openDailyCheckin(nextKey = apiKey, auto = false, proxyOverride = proxyUrl) {
     const trimmedKey = nextKey.trim();
     if (!trimmedKey) {
       if (!auto) setCheckinError("请先输入 API Key。");
@@ -2107,7 +2151,7 @@ export default function Home() {
     setCheckinLoading(true);
     setCheckinError("");
     try {
-      const data = await loadDailyCheckin(trimmedKey);
+      const data = await loadDailyCheckin(trimmedKey, proxyOverride);
       setCheckinData(data);
       if (auto) window.localStorage.setItem(CHECKIN_LAST_POPUP_STORAGE, data.dateKey);
     } catch (err) {
@@ -2352,6 +2396,18 @@ export default function Home() {
           <div className="connect-panel">
             <h2>连接微信读书</h2>
             <div className="field">
+              <label htmlFor="proxyUrl">代理地址</label>
+              <input
+                id="proxyUrl"
+                type="url"
+                value={proxyUrl}
+                onChange={(event) => setProxyUrl(event.target.value)}
+                onBlur={() => saveProxyUrl()}
+                placeholder="https://weread-skills-proxy.xxx.workers.dev"
+              />
+              <p className="field-help">填写 Cloudflare Worker 地址；以后换代理也只需改这里。</p>
+            </div>
+            <div className="field">
               <label htmlFor="apiKey">API Key</label>
               <input
                 id="apiKey"
@@ -2360,9 +2416,10 @@ export default function Home() {
                 onChange={(event) => setApiKey(event.target.value)}
                 onBlur={() => {
                   const savedKey = saveApiKey();
-                  if (savedKey && !result) void autoLoadShelf(savedKey);
-                  if (savedKey && window.localStorage.getItem(CHECKIN_LAST_POPUP_STORAGE) !== localDateKey()) {
-                    void openDailyCheckin(savedKey, true);
+                  const savedProxy = saveProxyUrl();
+                  if (savedKey && savedProxy && !result) void autoLoadShelf(savedKey, savedProxy);
+                  if (savedKey && savedProxy && window.localStorage.getItem(CHECKIN_LAST_POPUP_STORAGE) !== localDateKey()) {
+                    void openDailyCheckin(savedKey, true, savedProxy);
                   }
                 }}
                 placeholder="wrk-xxxxxxxx"
