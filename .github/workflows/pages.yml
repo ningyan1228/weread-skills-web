@@ -41,6 +41,7 @@ jobs:
 
       - name: Build static site
         env:
+          NEXT_PUBLIC_SENTRY_DSN: https://ed92f2ac22f9c183c42c9e6a2c739f27@o4511550230233088.ingest.de.sentry.io/4511550253432912
           NEXT_PUBLIC_BASE_PATH: /weread-skills-web
           NEXT_PUBLIC_WEREAD_PROXY_URL: https://whimsical-moxie-72f4df.netlify.app/api/weread
         run: pnpm build
