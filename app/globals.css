@@ -1146,6 +1146,19 @@ summary {
   margin-top: 14px;
 }
 
+.ebook-card {
+  background: linear-gradient(135deg, rgba(232, 247, 255, 0.95), #ffffff);
+}
+
+.ebook-card .afterword-icon {
+  color: var(--accent-strong);
+  background: #e6f7ff;
+}
+
+.ebook-card .button {
+  margin-top: 14px;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;

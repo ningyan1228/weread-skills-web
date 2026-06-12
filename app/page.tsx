@@ -3757,6 +3757,25 @@ function AfterwordSummary({ onOpenSupport }: { onOpenSupport: () => void }) {
         </div>
       </div>
 
+      <div className="afterword-card ebook-card">
+        <div className="afterword-icon">
+          <Download size={22} />
+        </div>
+        <div>
+          <h3>📚 电子书合集</h3>
+          <p>整理了一份可下载的电子书合集，适合补充书架、离线阅读或导入微信读书。</p>
+          <a
+            className="button primary"
+            href="https://pan.quark.cn/s/8ba2621d6314"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <Download size={17} />
+            打开下载网盘
+          </a>
+        </div>
+      </div>
+
       <div className="afterword-card">
         <div className="afterword-icon">
           <Info size={22} />
