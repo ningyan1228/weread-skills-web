@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import {
   BarChart3,
@@ -337,6 +337,30 @@ function asStringArray(value: unknown) {
   return Array.isArray(value) ? value.map((item) => String(item)).filter(Boolean) : [];
 }
 
+function getWereadApiErrorMessage(data: unknown) {
+  if (!isRecord(data)) return "";
+  const code = typeof data.errcode === "number" ? data.errcode : undefined;
+  const upstreamMessage = data.errmsg || data.message || data.msg;
+  if (upstreamMessage) return String(upstreamMessage);
+  if (code === -202) {
+    return "微信读书暂时拒绝了这次打卡附加请求（-202），通常是接口频率限制或临时不可用。稍后重试即可。";
+  }
+  if (code !== undefined) return `微信读书返回错误 ${code}`;
+  return "";
+}
+
+function normalizeAppError(err: unknown) {
+  const message = err instanceof Error ? err.message : String(err);
+  if (message === "-202" || message.includes("错误 -202") || message.includes("（-202）")) {
+    return "微信读书暂时拒绝了这次打卡附加请求（-202），通常是接口频率限制或临时不可用。稍后重试即可。";
+  }
+  return message;
+}
+
+function isNonBlockingCheckinError(message: string) {
+  return message.includes("-202") || message.includes("打卡附加请求");
+}
+
 function compact(values: Array<string | number | undefined | null | false>) {
   return values.filter(Boolean).join(" · ");
 }
@@ -470,16 +494,21 @@ function daysBetweenDateKeys(fromDateKey: string, toDateKey: string) {
   return Math.max(0, Math.floor(diff / 86_400_000));
 }
 
-function getOfficialReadingStreak(data: unknown) {
-  const root = isRecord(data) ? data : {};
-  const nested = [
-    root,
-    isRecord(root.summary) ? root.summary : {},
-    isRecord(root.readingSummary) ? root.readingSummary : {},
-    isRecord(root.readData) ? root.readData : {},
-    isRecord(root.profile) ? root.profile : {},
-    isRecord(root.user) ? root.user : {}
-  ];
+function getOfficialReadingStreak(...sources: unknown[]) {
+  const nested = sources.flatMap((source) => {
+    const root = isRecord(source) ? source : {};
+    return [
+      root,
+      isRecord(root.summary) ? root.summary : {},
+      isRecord(root.readingSummary) ? root.readingSummary : {},
+      isRecord(root.readData) ? root.readData : {},
+      isRecord(root.profile) ? root.profile : {},
+      isRecord(root.user) ? root.user : {},
+      isRecord(root.userInfo) ? root.userInfo : {},
+      isRecord(root.account) ? root.account : {},
+      isRecord(root.data) ? root.data : {}
+    ];
+  });
   for (const item of nested) {
     const value = firstFiniteNumber(
       item.continuousReadDays,
@@ -497,8 +526,8 @@ function getOfficialReadingStreak(data: unknown) {
   return 0;
 }
 
-function getReadingStreakStatus(data: unknown, dateKey = localDateKey()): ReadingStreakStatus {
-  const official = getOfficialReadingStreak(data);
+function getReadingStreakStatus(data: unknown, dateKey = localDateKey(), ...extraSources: unknown[]): ReadingStreakStatus {
+  const official = getOfficialReadingStreak(data, ...extraSources);
   if (official > 0) {
     return { status: "continuous", days: official, source: "official" };
   }
@@ -1861,7 +1890,7 @@ export default function Home() {
     }
 
     if (isRecord(data) && typeof data.errcode === "number" && data.errcode !== 0) {
-      throw new Error(String(data.errmsg || data.message || `微信读书返回错误 ${data.errcode}`));
+      throw new Error(getWereadApiErrorMessage(data) || `微信读书返回错误 ${data.errcode}`);
     }
 
     return data;
@@ -2292,11 +2321,11 @@ export default function Home() {
 
     const dateKey = localDateKey();
     const [statsData, shelfData] = await Promise.all([
-      callWeread({ api_name: "/readdata/detail", mode: "weekly" }, trimmedKey, proxyOverride),
+      callWeread({ api_name: "/readdata/detail", mode: "overall" }, trimmedKey, proxyOverride),
       callWeread({ api_name: "/shelf/sync" }, trimmedKey, proxyOverride)
     ]);
     const readSeconds = getTodayReadSeconds(statsData, dateKey);
-    const readingStreak = getReadingStreakStatus(statsData, dateKey);
+    const readingStreak = getReadingStreakStatus(statsData, dateKey, shelfData);
     const books = normalizeShelfItems(isRecord(shelfData) ? shelfData : {})
       .filter((item) => item.type === "book" && item.id)
       .sort((a, b) => b.updatedAt - a.updatedAt);
@@ -2360,7 +2389,7 @@ export default function Home() {
       setCheckinData(data);
       if (auto) window.localStorage.setItem(CHECKIN_LAST_POPUP_STORAGE, data.dateKey);
     } catch (err) {
-      setCheckinError(err instanceof Error ? err.message : String(err));
+      setCheckinError(normalizeAppError(err));
       if (auto) setCheckinOpen(false);
     } finally {
       setCheckinLoading(false);
@@ -3605,6 +3634,7 @@ function DailyCheckinModal({
   const highlightText = data ? getCheckinHighlightText(data) : "";
   const reviewText = data ? getCheckinReviewText(data) : "";
   const streakLabel = data ? formatReadingStreakBadge(data.readingStreak) : "-";
+  const visibleError = error && !(data && isNonBlockingCheckinError(error)) ? error : "";
 
   function skipToday() {
     if (typeof window !== "undefined") {
@@ -3637,7 +3667,7 @@ function DailyCheckinModal({
         </div>
 
         {loading ? <div className="message">正在读取今日阅读记录、最近书籍和划线想法...</div> : null}
-        {error ? <div className="message error">{error}</div> : null}
+        {visibleError ? <div className="message error">{visibleError}</div> : null}
 
         {!loading && data ? (
           <div className="checkin-modal-body">
@@ -4859,3 +4889,7 @@ function Metric({ label, value }: { label: string; value: ReactNode }) {
     </div>
   );
 }
+
+
+
+
