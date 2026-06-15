@@ -476,13 +476,30 @@ function dateKeyFromReadTimeKey(key: string) {
   return localDateKey(new Date(timestamp));
 }
 
-function readingTimeEntriesFromStats(data: unknown) {
+function readingTimeEntriesFromStats(data: unknown, allowReadTimesFallback = true) {
   const root = isRecord(data) ? data : {};
-  const dailyEntries = entriesFromTimeMap(root.dailyReadTimes);
-  const readEntries = entriesFromTimeMap(root.readTimes);
+  const dailyEntries = [
+    ...entriesFromTimeMap(root.dailyReadTimes),
+    ...entriesFromTimeMap(root.dailyReadTime),
+    ...entriesFromTimeMap(root.dateReadTimes),
+    ...entriesFromTimeMap(root.dayReadTimes)
+  ];
+  const readEntries = allowReadTimesFallback ? entriesFromTimeMap(root.readTimes) : [];
   return (dailyEntries.length ? dailyEntries : readEntries)
     .map((item) => ({ dateKey: dateKeyFromReadTimeKey(item.key), seconds: item.seconds }))
     .filter((item) => item.dateKey && item.seconds > 0)
+    .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+}
+
+function mergeReadingTimeEntries(...entryGroups: ReturnType<typeof readingTimeEntriesFromStats>[]) {
+  const merged = new Map<string, number>();
+  for (const entries of entryGroups) {
+    for (const item of entries) {
+      merged.set(item.dateKey, (merged.get(item.dateKey) || 0) + item.seconds);
+    }
+  }
+  return [...merged.entries()]
+    .map(([dateKey, seconds]) => ({ dateKey, seconds }))
     .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
 }
 
@@ -494,48 +511,82 @@ function daysBetweenDateKeys(fromDateKey: string, toDateKey: string) {
   return Math.max(0, Math.floor(diff / 86_400_000));
 }
 
+function isOfficialStreakKey(key: string) {
+  const normalized = key.toLowerCase().replace(/[^a-z]/g, "");
+  const exactKeys = new Set([
+    "continuousreaddays",
+    "continuereaddays",
+    "consecutivereaddays",
+    "readcontinuedays",
+    "readingstreakdays",
+    "readstreakdays",
+    "streakdays",
+    "continuedays",
+    "serialreaddays",
+    "continuousdays",
+    "currentstreakdays"
+  ]);
+  return (
+    exactKeys.has(normalized) ||
+    (normalized.includes("read") && normalized.includes("continue") && normalized.includes("day")) ||
+    (normalized.includes("read") && normalized.includes("continuous") && normalized.includes("day")) ||
+    (normalized.includes("read") && normalized.includes("consecutive") && normalized.includes("day")) ||
+    (normalized.includes("streak") && normalized.includes("day"))
+  );
+}
+
 function getOfficialReadingStreak(...sources: unknown[]) {
-  const nested = sources.flatMap((source) => {
-    const root = isRecord(source) ? source : {};
-    return [
-      root,
-      isRecord(root.summary) ? root.summary : {},
-      isRecord(root.readingSummary) ? root.readingSummary : {},
-      isRecord(root.readData) ? root.readData : {},
-      isRecord(root.profile) ? root.profile : {},
-      isRecord(root.user) ? root.user : {},
-      isRecord(root.userInfo) ? root.userInfo : {},
-      isRecord(root.account) ? root.account : {},
-      isRecord(root.data) ? root.data : {}
-    ];
-  });
-  for (const item of nested) {
-    const value = firstFiniteNumber(
-      item.continuousReadDays,
-      item.continueReadDays,
-      item.consecutiveReadDays,
-      item.readContinueDays,
-      item.readingStreak,
-      item.streakDays,
-      item.continueDays,
-      item.serialReadDays,
-      item.continuousDays
-    );
-    if (value && value > 0) return Math.floor(value);
+  const seen = new Set<unknown>();
+  const scan = (value: unknown, depth = 0): number | undefined => {
+    if (depth > 5 || !value || seen.has(value)) return undefined;
+    if (typeof value !== "object") return undefined;
+    seen.add(value);
+
+    if (Array.isArray(value)) {
+      for (const item of value.slice(0, 30)) {
+        const found = scan(item, depth + 1);
+        if (found && found > 0) return found;
+      }
+      return undefined;
+    }
+
+    if (!isRecord(value)) return undefined;
+    for (const [key, raw] of Object.entries(value)) {
+      if (isOfficialStreakKey(key)) {
+        const days = firstFiniteNumber(raw);
+        if (days && days > 0) return Math.floor(days);
+      }
+    }
+    for (const raw of Object.values(value)) {
+      const found = scan(raw, depth + 1);
+      if (found && found > 0) return found;
+    }
+    return undefined;
+  };
+
+  for (const source of sources) {
+    const found = scan(source);
+    if (found && found > 0) return found;
   }
   return 0;
 }
 
-function getReadingStreakStatus(data: unknown, dateKey = localDateKey(), ...extraSources: unknown[]): ReadingStreakStatus {
-  const official = getOfficialReadingStreak(data, ...extraSources);
+function getReadingStreakStatus(dateKey = localDateKey(), todayReadSeconds = 0, ...sources: unknown[]): ReadingStreakStatus {
+  const official = getOfficialReadingStreak(...sources);
   if (official > 0) {
     return { status: "continuous", days: official, source: "official" };
   }
 
-  const entries = readingTimeEntriesFromStats(data);
-  if (!entries.length) return { status: "unknown", days: 0, source: "computed" };
+  let entries = mergeReadingTimeEntries(...sources.map((source) => readingTimeEntriesFromStats(source, false)));
+  if (!entries.length) {
+    entries = mergeReadingTimeEntries(...sources.slice(0, 2).map((source) => readingTimeEntriesFromStats(source, true)));
+  }
+  if (todayReadSeconds > 0 && !entries.some((item) => item.dateKey === dateKey)) {
+    entries = mergeReadingTimeEntries(entries, [{ dateKey, seconds: todayReadSeconds }]);
+  }
+  if (!entries.length) return { status: todayReadSeconds > 0 ? "continuous" : "unknown", days: todayReadSeconds > 0 ? 1 : 0, source: "computed" };
 
-  const readDates = new Set(entries.map((item) => item.dateKey));
+  const readDates = new Set(entries.map((item) => item.dateKey).filter((item) => item <= dateKey));
   if (readDates.has(dateKey)) {
     let days = 0;
     const cursor = new Date(`${dateKey}T00:00:00`);
@@ -543,10 +594,10 @@ function getReadingStreakStatus(data: unknown, dateKey = localDateKey(), ...extr
       days += 1;
       cursor.setDate(cursor.getDate() - 1);
     }
-    return { status: "continuous", days, source: "computed" };
+    return { status: "continuous", days: Math.max(days, 1), source: "computed" };
   }
 
-  const lastReadDate = [...readDates].filter((item) => item <= dateKey).sort().at(-1);
+  const lastReadDate = [...readDates].sort().at(-1);
   if (!lastReadDate) return { status: "unknown", days: 0, source: "computed" };
   return {
     status: "inactive",
@@ -2320,12 +2371,14 @@ export default function Home() {
     if (!trimmedKey) throw new Error("请先输入 API Key。");
 
     const dateKey = localDateKey();
-    const [statsData, shelfData] = await Promise.all([
-      callWeread({ api_name: "/readdata/detail", mode: "overall" }, trimmedKey, proxyOverride),
+    const [weeklyStatsData, monthlyStatsData, yearlyStatsData, shelfData] = await Promise.all([
+      callWeread({ api_name: "/readdata/detail", mode: "weekly" }, trimmedKey, proxyOverride),
+      callWeread({ api_name: "/readdata/detail", mode: "monthly" }, trimmedKey, proxyOverride),
+      callWeread({ api_name: "/readdata/detail", mode: "annually" }, trimmedKey, proxyOverride),
       callWeread({ api_name: "/shelf/sync" }, trimmedKey, proxyOverride)
     ]);
-    const readSeconds = getTodayReadSeconds(statsData, dateKey);
-    const readingStreak = getReadingStreakStatus(statsData, dateKey, shelfData);
+    const readSeconds = getTodayReadSeconds(weeklyStatsData, dateKey);
+    const readingStreak = getReadingStreakStatus(dateKey, readSeconds, weeklyStatsData, monthlyStatsData, yearlyStatsData, shelfData);
     const books = normalizeShelfItems(isRecord(shelfData) ? shelfData : {})
       .filter((item) => item.type === "book" && item.id)
       .sort((a, b) => b.updatedAt - a.updatedAt);
@@ -4889,6 +4942,8 @@ function Metric({ label, value }: { label: string; value: ReactNode }) {
     </div>
   );
 }
+
+
 
 
 
