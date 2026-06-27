@@ -1,4 +1,4 @@
-# WeRead Skills Web
+﻿# WeRead Skills Web
 
 微信读书 Skills 的轻量网页客户端。前端可部署到 GitHub Pages，微信读书 API 通过独立 HTTPS 代理转发，用户的 API Key 只保存在本地浏览器。
 
@@ -21,7 +21,7 @@ GitHub Pages 只能托管静态文件，不能直接做后端代理，所以必�
 当前已通过手机关闭 VPN 测试的代理地址：
 
 ```text
-https://weread-proxy-deno-21-zqs91qph3nb5.gqzning.deno.net/
+https://weread-api.gjsx.uno/
 ```
 
 这个地址已经写入 GitHub Pages Actions。重新部署 GitHub Pages 后，页面会自动隐藏“代理地址”输入框，普通用户只需要填写微信读书 API Key。
@@ -136,3 +136,4 @@ node node_modules\next\dist\bin\next build
 - 微信读书 API Key 不写入 GitHub，不写入代理环境变量。
 - API Key 只保存在用户浏览器 `localStorage`。
 - 代理只转发到微信读书 Skills 网关，不做通用转发。
+

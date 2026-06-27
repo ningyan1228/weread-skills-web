@@ -1,0 +1,19 @@
+﻿services:
+  weread-proxy:
+    build: .
+    container_name: weread-proxy
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      VIRTUAL_HOST: weread-api.gjsx.uno
+      VIRTUAL_PORT: 3000
+      LETSENCRYPT_HOST: weread-api.gjsx.uno
+    expose:
+      - "3000"
+    networks:
+      - web
+
+networks:
+  web:
+    external: true

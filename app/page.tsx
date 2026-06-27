@@ -26,7 +26,7 @@ import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 type AnyRecord = Record<string, any>;
 
 const BUILT_IN_WEREAD_PROXY_URLS = [
-  "https://weread-proxy-deno-21-zqs91qph3nb5.gqzning.deno.net/",
+  "https://weread-api.gjsx.uno/",
   process.env.NEXT_PUBLIC_WEREAD_PROXY_URL,
   process.env.NEXT_PUBLIC_WEREAD_PROXY_URLS
 ]
@@ -4942,6 +4942,7 @@ function Metric({ label, value }: { label: string; value: ReactNode }) {
     </div>
   );
 }
+
 
 
 
