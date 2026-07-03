@@ -41,7 +41,7 @@ jobs:
 
       - name: Build static site
         env:
-          NEXT_PUBLIC_BASE_PATH: /weread-skills-web
+          NEXT_PUBLIC_BASE_PATH: ""
           NEXT_PUBLIC_WEREAD_PROXY_URL: https://weread-api.gjsx.uno/
         run: pnpm build
 
@@ -63,4 +63,5 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
 
