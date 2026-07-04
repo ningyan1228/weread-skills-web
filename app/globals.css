@@ -82,14 +82,14 @@ a {
 }
 
 .shell {
-  max-width: 1180px;
+  max-width: 1280px;
   margin: 0 auto;
 }
 
 .hero {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
-  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+  gap: 14px;
   align-items: stretch;
 }
 
@@ -104,7 +104,7 @@ a {
 }
 
 .title-panel {
-  padding: 24px;
+  padding: 20px;
 }
 
 .title-row {
@@ -163,11 +163,11 @@ p {
 
 .hero-quote {
   margin-top: 8px;
-  min-height: 90px;
-  padding: 18px 4px 0 0;
+  min-height: 66px;
+  padding: 12px 4px 0 0;
   color: #2f4057;
-  font-size: 18px;
-  line-height: 1.9;
+  font-size: 16px;
+  line-height: 1.75;
   letter-spacing: 0;
 }
 
@@ -315,50 +315,55 @@ textarea:focus {
 
 .main {
   display: grid;
-  grid-template-columns: 230px minmax(0, 1fr);
-  gap: 18px;
-  margin-top: 18px;
+  grid-template-columns: 188px minmax(0, 1fr);
+  gap: 14px;
+  margin-top: 14px;
+  align-items: start;
 }
 
 .tabs {
   display: grid;
-  gap: 8px;
+  gap: 4px;
   align-self: start;
-  padding: 10px;
-  background: var(--panel);
-  border: 1px solid var(--line);
+  position: sticky;
+  top: 16px;
+  padding: 8px;
+  border: 1px solid rgba(207, 224, 238, 0.78);
   border-radius: 8px;
-  box-shadow: var(--shadow);
+  background: rgba(255, 255, 255, 0.74);
+  box-shadow: 0 10px 30px rgba(23, 32, 51, 0.06);
+  backdrop-filter: blur(14px);
 }
 
 .tab {
   display: flex;
   align-items: center;
-  gap: 9px;
-  min-height: 42px;
+  gap: 8px;
+  min-height: 34px;
   border: 0;
-  border-radius: 8px;
-  padding: 9px 10px;
+  border-radius: 7px;
+  padding: 7px 8px;
   background: transparent;
   color: var(--muted);
+  font-size: 13px;
   text-align: left;
 }
 
 .tab.active {
-  background: rgba(25, 127, 150, 0.12);
+  background: linear-gradient(90deg, rgba(25, 127, 150, 0.16), rgba(25, 127, 150, 0.06));
   color: var(--accent-strong);
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .workspace {
   display: grid;
-  gap: 18px;
+  gap: 14px;
   min-width: 0;
 }
 
 .tool-panel,
 .result-panel {
-  padding: 18px;
+  padding: 14px;
 }
 
 .grid {
@@ -2384,6 +2389,7 @@ summary {
   }
 
   .tabs {
+    position: static;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -2497,6 +2503,7 @@ summary {
     display: block !important;
   }
 }
+
 
 
 
