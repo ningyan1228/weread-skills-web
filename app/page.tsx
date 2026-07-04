@@ -4,6 +4,8 @@ import {
   BarChart3,
   BookOpen,
   CalendarCheck,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   Compass,
   Coffee,
@@ -4145,6 +4147,8 @@ function ShelfSummary({
   const [readFilter, setReadFilter] = useState<"all" | "reading" | "done">("all");
   const [sortBy, setSortBy] = useState<"recent" | "notes" | "title">("recent");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [pageSize, setPageSize] = useState<40 | 80 | 160 | "all">(80);
+  const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<ShelfItem | null>(null);
 
   const root = isRecord(data) ? data : {};
@@ -4154,6 +4158,19 @@ function ShelfSummary({
   const total = books.length + albums.length + mpCount;
   const items = normalizeShelfItems(root);
   const categories = ["全部", ...Array.from(new Set(items.map((item) => item.category).filter(Boolean))).slice(0, 18)];
+  const finishedCount = items.filter((item) => item.type === "book" && item.finished).length;
+  const readingCount = items.filter((item) => item.type === "book" && !item.finished).length;
+  const privateCount = items.filter((item) => item.secret).length;
+  const recentItems = [...items].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 5);
+  const categoryLeaders = Array.from(
+    items.reduce((map, item) => {
+      if (!item.category) return map;
+      map.set(item.category, (map.get(item.category) || 0) + 1);
+      return map;
+    }, new Map<string, number>())
+  )
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
   const filtered = items
     .filter((item) => {
       const haystack = `${item.title} ${item.author} ${item.category}`.toLowerCase();
@@ -4169,20 +4186,68 @@ function ShelfSummary({
       return b.updatedAt - a.updatedAt;
     });
 
+  useEffect(() => {
+    setPage(1);
+  }, [query, category, readFilter, sortBy, pageSize]);
+
+  const numericPageSize = pageSize === "all" ? filtered.length || 1 : pageSize;
+  const totalPages = pageSize === "all" ? 1 : Math.max(1, Math.ceil(filtered.length / numericPageSize));
+  const safePage = Math.min(page, totalPages);
+  const pageStart = pageSize === "all" ? 0 : (safePage - 1) * numericPageSize;
+  const pageEnd = pageSize === "all" ? filtered.length : Math.min(filtered.length, pageStart + numericPageSize);
+  const visibleItems = pageSize === "all" ? filtered : filtered.slice(pageStart, pageEnd);
+  const visibleRange = filtered.length ? `${(pageStart + 1).toLocaleString("zh-CN")}-${pageEnd.toLocaleString("zh-CN")}` : "0";
+
   return (
     <section className="bookshelf">
-      <div className="cards">
-        <Metric label="书架总条目" value={total} />
-        <Metric label="电子书" value={books.length} />
-        <Metric label="专辑/有声书" value={albums.length} />
-        <Metric label="文章收藏入口" value={mpCount} />
+      <div className="shelf-hero">
+        <div className="shelf-hero-copy">
+          <span className="shelf-eyebrow">我的书房</span>
+          <h2>{total.toLocaleString("zh-CN")} 个阅读条目</h2>
+          <p>{compact([`${books.length.toLocaleString("zh-CN")} 本电子书`, albums.length ? `${albums.length} 个有声内容` : "", mpCount ? "文章收藏已接入" : ""])}</p>
+          <div className="shelf-pills" aria-label="书架摘要">
+            <span>{readingCount.toLocaleString("zh-CN")} 本未读完</span>
+            <span>{finishedCount.toLocaleString("zh-CN")} 本已读完</span>
+            <span>{privateCount.toLocaleString("zh-CN")} 条私密</span>
+          </div>
+        </div>
+
+        <div className="shelf-focus" aria-label="最近阅读">
+          {recentItems.map((item) => (
+            <button className="shelf-focus-book" key={`${item.type}-${item.id}`} onClick={() => setSelected(item)} type="button">
+              <div className="shelf-focus-cover">
+                {item.cover ? <img src={item.cover} alt={item.title} loading="lazy" /> : <span>{item.type === "mp" ? "文" : "书"}</span>}
+              </div>
+              <span>{item.title}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="shelf-dashboard">
+        <div className="shelf-stat">
+          <span>电子书</span>
+          <strong>{books.length.toLocaleString("zh-CN")}</strong>
+        </div>
+        <div className="shelf-stat">
+          <span>专辑/有声书</span>
+          <strong>{albums.length.toLocaleString("zh-CN")}</strong>
+        </div>
+        <div className="shelf-stat">
+          <span>文章收藏</span>
+          <strong>{mpCount.toLocaleString("zh-CN")}</strong>
+        </div>
+        <div className="shelf-stat wide">
+          <span>主要分类</span>
+          <strong>{categoryLeaders.length ? categoryLeaders.map(([name]) => name).join(" / ") : "未分类"}</strong>
+        </div>
       </div>
 
       <div className="shelf-toolbar no-print">
-        <div className="shelf-search">
+        <label className="shelf-search">
           <Search size={18} />
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索书名或作者" />
-        </div>
+        </label>
         <div className="segmented">
           <button className={sortBy === "recent" ? "active" : ""} onClick={() => setSortBy("recent")} type="button">
             最近阅读
@@ -4206,11 +4271,11 @@ function ShelfSummary({
             已读完
           </button>
         </div>
-        <div className="icon-toggle">
-          <button className={viewMode === "list" ? "active" : ""} onClick={() => setViewMode("list")} type="button">
+        <div className="icon-toggle" aria-label="书架视图">
+          <button aria-label="列表视图" className={viewMode === "list" ? "active" : ""} onClick={() => setViewMode("list")} type="button">
             <List size={18} />
           </button>
-          <button className={viewMode === "grid" ? "active" : ""} onClick={() => setViewMode("grid")} type="button">
+          <button aria-label="封面视图" className={viewMode === "grid" ? "active" : ""} onClick={() => setViewMode("grid")} type="button">
             <Grid2X2 size={18} />
           </button>
         </div>
@@ -4224,14 +4289,55 @@ function ShelfSummary({
         ))}
       </div>
 
+      <div className="shelf-result-head">
+        <div>
+          <span>{filtered.length.toLocaleString("zh-CN")} 个结果</span>
+          <small>{category === "全部" ? "全部分类" : category} · 当前显示 {visibleRange}</small>
+        </div>
+        <div className="shelf-pagination no-print">
+          <div className="segmented compact">
+            {[40, 80, 160].map((size) => (
+              <button
+                className={pageSize === size ? "active" : ""}
+                key={size}
+                onClick={() => setPageSize(size as 40 | 80 | 160)}
+                type="button"
+              >
+                {size}
+              </button>
+            ))}
+            <button className={pageSize === "all" ? "active" : ""} onClick={() => setPageSize("all")} type="button">
+              全部
+            </button>
+          </div>
+          <div className="pager-buttons">
+            <button aria-label="上一页" disabled={safePage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} type="button">
+              <ChevronLeft size={17} />
+            </button>
+            <span>{safePage} / {totalPages}</span>
+            <button aria-label="下一页" disabled={safePage >= totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))} type="button">
+              <ChevronRight size={17} />
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div className={viewMode === "grid" ? "cover-grid" : "cover-list"}>
-        {filtered.map((item) => (
+        {visibleItems.map((item) => (
           <button className="cover-card" key={`${item.type}-${item.id}`} onClick={() => setSelected(item)} type="button">
             <div className="cover-frame">
               {item.cover ? <img src={item.cover} alt={item.title} loading="lazy" /> : <span>{item.type === "mp" ? "文" : "书"}</span>}
+              <small>{item.finished ? "已读完" : item.type === "book" ? "在读" : item.type === "album" ? "有声" : "收藏"}</small>
             </div>
-            <div className="cover-title">{item.title}</div>
-            <div className="cover-meta">{compact([item.author, item.category])}</div>
+            <div className="cover-copy">
+              <div className="cover-title">{item.title}</div>
+              <div className="cover-meta">{compact([item.author, item.category])}</div>
+              <div className="cover-tags">
+                {item.isTop ? <span>置顶</span> : null}
+                {item.secret ? <span>私密</span> : null}
+                {item.updatedAt ? <span>{formatDate(item.updatedAt)}</span> : null}
+              </div>
+            </div>
           </button>
         ))}
       </div>
@@ -4942,6 +5048,9 @@ function Metric({ label, value }: { label: string; value: ReactNode }) {
     </div>
   );
 }
+
+
+
 
 
 
