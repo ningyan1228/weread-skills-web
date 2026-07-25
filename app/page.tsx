@@ -2197,19 +2197,19 @@ export default function Home() {
     };
   }
 
-  async function buildToolParams() {
+  async function buildToolParams(toolId: ToolId = activeTool) {
     const safeCount = Number(count) > 0 ? Number(count) : 20;
 
-    if (activeTool === "search") {
+    if (toolId === "search") {
       return {
         api_name: "/readdata/detail",
         mode
       };
     }
 
-    if (activeTool === "shelf") return { api_name: "/shelf/sync" };
+    if (toolId === "shelf") return { api_name: "/shelf/sync" };
 
-    if (activeTool === "notes") {
+    if (toolId === "notes") {
       return {
         api_name: "/user/notebooks",
         count: bookQuery.trim() ? Math.max(safeCount, 100) : safeCount,
@@ -2217,17 +2217,17 @@ export default function Home() {
       };
     }
 
-    if (activeTool === "afterword") return { api_name: "local" };
+    if (toolId === "afterword") return { api_name: "local" };
 
-    const targetBookId = ["book", "progress", "chapters", "reviews"].includes(activeTool)
+    const targetBookId = ["book", "progress", "chapters", "reviews"].includes(toolId)
       ? await resolveBookIdFromQuery()
       : "";
 
-    if (activeTool === "book") return { api_name: "/book/info", bookId: targetBookId };
-    if (activeTool === "progress") return { api_name: "/book/getprogress", bookId: targetBookId };
-    if (activeTool === "chapters") return { api_name: "/book/chapterinfo", bookId: targetBookId };
+    if (toolId === "book") return { api_name: "/book/info", bookId: targetBookId };
+    if (toolId === "progress") return { api_name: "/book/getprogress", bookId: targetBookId };
+    if (toolId === "chapters") return { api_name: "/book/chapterinfo", bookId: targetBookId };
 
-    if (activeTool === "reviews") {
+    if (toolId === "reviews") {
       return {
         api_name: "/review/list",
         bookId: targetBookId,
@@ -2451,53 +2451,61 @@ export default function Home() {
     }
   }
 
-  async function runTool(event?: FormEvent) {
-    event?.preventDefault();
+  function canAutoRunTool(toolId: ToolId) {
+    if (toolId === "afterword") return true;
+    if (!apiKey.trim()) return false;
+    if ((["book", "progress", "chapters", "reviews"] as ToolId[]).includes(toolId)) {
+      return Boolean(bookQuery.trim() || bookId.trim());
+    }
+    return true;
+  }
+
+  async function runSelectedTool(toolId: ToolId = activeTool) {
     setLoading(true);
     setError("");
     setResult(null);
-    if (activeTool === "notes") {
+    if (toolId === "notes") {
       setNoteDetails(null);
       setNoteError("");
     }
 
     try {
-      if (activeTool === "afterword") {
+      if (toolId === "afterword") {
         setResult({ __kind: "afterword" });
         return;
       }
       saveApiKey();
-      if (activeTool === "book") {
+      if (toolId === "book") {
         const data = await runBookLookup();
         setResult(data);
         return;
       }
-      if (activeTool === "progress") {
+      if (toolId === "progress") {
         const data = await runProgressLookup();
         setResult(data);
         return;
       }
-      if (activeTool === "discover") {
+      if (toolId === "discover") {
         const safeCount = Number(count) > 0 ? Number(count) : 20;
         const data = await runSmartDiscover(safeCount);
         setResult(data);
         return;
       }
-      if (activeTool === "universe") {
+      if (toolId === "universe") {
         const data = await runReadingUniverse();
         setResult(data);
         return;
       }
-      if (activeTool === "checkin") {
+      if (toolId === "checkin") {
         const data = await loadDailyCheckin();
         setCheckinData(data);
         setCheckinOpen(true);
         setResult(data);
         return;
       }
-      const data = await callWeread(await buildToolParams());
+      const data = await callWeread(await buildToolParams(toolId));
       setResult(data);
-      if (activeTool === "notes" && bookQuery.trim()) {
+      if (toolId === "notes" && bookQuery.trim()) {
         const query = bookQuery.trim().toLowerCase();
         const notebooks = asArray((isRecord(data) ? data : {}).books) as NoteNotebook[];
         const match = notebooks.find((notebook) => {
@@ -2516,6 +2524,24 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function runTool(event?: FormEvent) {
+    event?.preventDefault();
+    await runSelectedTool(activeTool);
+  }
+
+  function handleToolSelect(toolId: ToolId) {
+    if (loading && toolId === activeTool) return;
+    setActiveTool(toolId);
+    setError("");
+    setResult(null);
+    setResolvedBook(null);
+    setNoteDetails(null);
+    setNoteError("");
+
+    if (!canAutoRunTool(toolId)) return;
+    void runSelectedTool(toolId);
   }
 
   async function loadBookNotes(notebook: NoteNotebook) {
@@ -2755,13 +2781,8 @@ export default function Home() {
               <button
                 className={`tab ${activeTool === tool.id ? "active" : ""}`}
                 key={tool.id}
-                onClick={() => {
-                  setActiveTool(tool.id);
-                  setError("");
-                  setResult(tool.id === "afterword" ? { __kind: "afterword" } : null);
-                  setNoteDetails(null);
-                  setNoteError("");
-                }}
+                onClick={() => handleToolSelect(tool.id)}
+                type="button"
               >
                 {tool.icon}
                 {tool.label}
@@ -5048,6 +5069,8 @@ function Metric({ label, value }: { label: string; value: ReactNode }) {
     </div>
   );
 }
+
+
 
 
 
